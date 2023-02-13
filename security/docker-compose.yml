@@ -1,0 +1,86 @@
+version: '3.7'
+
+networks:
+  frontend:
+  backend:
+  monitoring:
+    
+volumes:
+  nginx-conf:
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+
+services:
+  keycloak:
+    build: 
+      context: ${KC_DOCKERFILE:-https://github.com/LavLabInfrastructure/docker-security-keycloak.git}
+      args:
+        - KC_VERSION=${KC_VERSION:-20.0.3}
+    env_file: ${DSA_CONF_DIR:-./configs/security-conf}/keycloak/kc.env
+      
+    volumes:
+      - ${CERT_DIR:-./certs}/keycloak:/etc/ssl/keycloak:ro
+
+    environment:
+      PROXY_ADDRESS_FORWARDING: true
+      KC_DB: postgres
+      KC_DB_URL_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-root}
+      KC_DB_URL_DATABASE: ${KC_DB_URL_DATABASE:-keycloak}
+      KC_DB_USERNAME: ${POSTGRES_USER:-root}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      JDBC_PARAMS: ${KC_JDBC_PARAMS}
+      KC_DEV: ${KC_DEV:-false}
+
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+    
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    networks:
+      - frontend
+      - backend
+        
+  postgres:
+    image: postgres:${PG_VERSION:-12.2-alpine}
+    healthcheck: 
+      test: ["CMD", "pg_isready"]
+
+    volumes:
+      - ${PG_DATA_DIR:-./instance}/postgres:/postgres
+
+    environment:
+      - PGDATA=/postgres/data/
+      - POSTGRES_INITDB_WALDIR=/postgres/wal/
+
+      - POSTGRES_DB=${POSTGRES_DB:-root}
+      - POSTGRES_USER=${POSTGRES_USER:-root}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password}
+
+    networks:
+      - backend
+
+  nginx:
+    build: 
+      context: ${NGINX_DOCKERFILE:-https://github.com/LavLabInfrastructure/nginxLLAB.git}
+      args:
+        - NGINX_VERSION=${NGINX_VERSION:-1.19-alpine-perl}
+
+    depends_on:
+      keycloak:
+        condition: service_healthy
+
+    ports:
+      - "80:80"
+      - "443:443"
+
+    networks:
+      - frontend
+
+    volumes:
+      - ${CERT_DIR:-./certs}/keycloak:/etc/ssl/keycloak:ro
+      - "${LOG_DIR:-./instance/logs/}/nginx/:/var/log/nginx/"
+      - "${DSA_CONF_DIR:-./configs/security-conf}/nginx/:/etc/nginx/conf.d/keycloak"

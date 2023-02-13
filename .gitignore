@@ -1,0 +1,6 @@
+security/certs/*
+security/instance/
+
+security/configs/*-conf/
+!security/configs/security-conf/
+!security/configs/security-dev-conf/
